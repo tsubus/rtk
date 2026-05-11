@@ -45,6 +45,8 @@ pub enum AgentTarget {
     Kilocode,
     /// Google Antigravity
     Antigravity,
+    /// Oh My Pi (OMP)
+    Omp,
 }
 
 #[derive(Parser)]
@@ -1774,10 +1776,12 @@ fn run_cli() -> Result<i32> {
                 dry_run,
             };
             if show {
-                hooks::init::show_config(codex)?;
+                let omp = agent == Some(AgentTarget::Omp);
+                hooks::init::show_config(codex, omp)?;
             } else if uninstall {
                 let cursor = agent == Some(AgentTarget::Cursor);
-                hooks::init::uninstall(global, gemini, codex, cursor, ctx)?;
+                let omp = agent == Some(AgentTarget::Omp);
+                hooks::init::uninstall(global, gemini, codex, cursor, omp, ctx)?;
             } else if gemini {
                 let patch_mode = if auto_patch {
                     hooks::init::PatchMode::Auto
@@ -1801,6 +1805,8 @@ fn run_cli() -> Result<i32> {
                     );
                 }
                 hooks::init::run_antigravity_mode(ctx)?;
+            } else if agent == Some(AgentTarget::Omp) {
+                hooks::init::run_omp_mode(global, ctx)?;
             } else {
                 let install_opencode = opencode;
                 let install_claude = !opencode;
@@ -3049,4 +3055,5 @@ mod tests {
             _ => panic!("Expected Commands::Npx for unknown tool"),
         }
     }
+
 }

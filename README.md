@@ -105,6 +105,8 @@ rtk gain        # Should show token savings stats
 rtk init -g                     # Claude Code / Copilot (default)
 rtk init -g --gemini            # Gemini CLI
 rtk init -g --codex             # Codex (OpenAI)
+rtk init --agent omp              # Oh My Pi (OMP, project extension)
+rtk init -g --agent omp           # Oh My Pi (OMP, user extension)
 rtk init -g --agent cursor      # Cursor
 rtk init --agent windsurf       # Windsurf
 rtk init --agent cline          # Cline / Roo Code
@@ -350,7 +352,7 @@ rtk git status
 
 ## Supported AI Tools
 
-RTK supports 12 AI coding tools. Each integration transparently rewrites shell commands to `rtk` equivalents for 60-90% token savings.
+RTK supports 13 AI coding tools. Each integration transparently rewrites shell commands to `rtk` equivalents for 60-90% token savings.
 
 | Tool | Install | Method |
 |------|---------|--------|
@@ -360,6 +362,7 @@ RTK supports 12 AI coding tools. Each integration transparently rewrites shell c
 | **Cursor** | `rtk init -g --agent cursor` | preToolUse hook (hooks.json) |
 | **Gemini CLI** | `rtk init -g --gemini` | BeforeTool hook |
 | **Codex** | `rtk init -g --codex` | AGENTS.md + RTK.md instructions |
+| **Oh My Pi (OMP)** | `rtk init --agent omp` / `rtk init -g --agent omp` | OMP extension (`tool_call`) — `./.omp/extensions/rtk.ts` or `~/.omp/agent/extensions/rtk.ts` |
 | **Windsurf** | `rtk init --agent windsurf` | .windsurfrules (project-scoped) |
 | **Cline / Roo Code** | `rtk init --agent cline` | .clinerules (project-scoped) |
 | **OpenCode** | `rtk init -g --opencode` | Plugin TS (tool.execute.before) |

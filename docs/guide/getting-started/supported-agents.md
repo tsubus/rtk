@@ -35,6 +35,7 @@ Agent runs "cargo test"
 | Gemini CLI | Rust binary (`BeforeTool`) | Yes |
 | OpenCode | TypeScript plugin (`tool.execute.before`) | Yes |
 | OpenClaw | TypeScript plugin (`before_tool_call`) | Yes |
+| Oh My Pi (OMP) | TypeScript extension (`tool_call`) | Yes |
 | Cline / Roo Code | Rules file (prompt-level) | N/A |
 | Windsurf | Rules file (prompt-level) | N/A |
 | Codex CLI | AGENTS.md instructions | N/A |
@@ -111,6 +112,15 @@ rtk init --windsurf    # creates .windsurfrules in current project
 ```bash
 rtk init --codex    # creates AGENTS.md or patches existing one
 ```
+
+### Oh My Pi
+
+```bash
+rtk init --agent omp      # creates ./.omp/extensions/rtk.ts
+rtk init -g --agent omp   # creates ~/.omp/agent/extensions/rtk.ts
+```
+
+Oh My Pi loads project extensions from `.omp/extensions/` and user extensions from `~/.omp/agent/extensions/`. RTK installs a dedicated `rtk.ts` extension that intercepts `bash` tool calls and delegates rewrite decisions to `rtk rewrite`.
 
 ### Kilo Code
 

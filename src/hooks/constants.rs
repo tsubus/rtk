@@ -21,3 +21,6 @@ pub const OPENCODE_PLUGIN_FILE: &str = "rtk.ts";
 pub const CURSOR_DIR: &str = ".cursor";
 pub const CODEX_DIR: &str = ".codex";
 pub const GEMINI_DIR: &str = ".gemini";
+
+pub const OMP_GLOBAL_EXTENSION_PATH: &str = ".omp/agent/extensions/rtk.ts";
+pub const OMP_PROJECT_EXTENSION_PATH: &str = ".omp/extensions/rtk.ts";

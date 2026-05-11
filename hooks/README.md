@@ -39,6 +39,7 @@ Each agent subdirectory has its own README with hook-specific details:
 - **[`cline/`](cline/README.md)** — Rules file (prompt-level), `.clinerules` project-local installation
 - **[`windsurf/`](windsurf/README.md)** — Rules file (prompt-level), `.windsurfrules` workspace-scoped
 - **[`codex/`](codex/README.md)** — Awareness document, `AGENTS.md` integration, `$CODEX_HOME` or `~/.codex/` location
+- **[`omp/`](omp/README.md)** — TypeScript extension, OMP `tool_call` rewrite via `./.omp/extensions/rtk.ts` or `~/.omp/agent/extensions/rtk.ts`
 - **[`opencode/`](opencode/README.md)** — TypeScript plugin, `zx` library, `tool.execute.before` event, in-place mutation
 
 ## Supported Agents
@@ -53,6 +54,7 @@ Each agent subdirectory has its own README with hook-specific details:
 | Cline / Roo Code | Custom instructions (rules file) | Prompt-level guidance | N/A |
 | Windsurf | Custom instructions (rules file) | Prompt-level guidance | N/A |
 | Codex CLI | AGENTS.md / instructions | Prompt-level guidance | N/A |
+| Oh My Pi (OMP) | TypeScript extension (`tool_call`) | In-place mutation | Yes (`event.input`) |
 | OpenCode | TypeScript plugin (`tool.execute.before`) | In-place mutation | Yes |
 
 ## JSON Formats by Agent

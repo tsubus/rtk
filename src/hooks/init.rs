@@ -12,12 +12,14 @@ use crate::hooks::constants::{
 
 use super::constants::{
     BEFORE_TOOL_KEY, CLAUDE_DIR, CLAUDE_HOOK_COMMAND, CODEX_DIR, CURSOR_HOOK_COMMAND,
-    GEMINI_HOOK_FILE, HOOKS_JSON, HOOKS_SUBDIR, PRE_TOOL_USE_KEY, REWRITE_HOOK_FILE, SETTINGS_JSON,
+    GEMINI_HOOK_FILE, HOOKS_JSON, HOOKS_SUBDIR, OMP_GLOBAL_EXTENSION_PATH,
+    OMP_PROJECT_EXTENSION_PATH, PRE_TOOL_USE_KEY, REWRITE_HOOK_FILE, SETTINGS_JSON,
 };
 use super::integrity;
 
 // Embedded OpenCode plugin (auto-rewrite)
 const OPENCODE_PLUGIN: &str = include_str!("../../hooks/opencode/rtk.ts");
+const OMP_EXTENSION: &str = include_str!("../../hooks/omp/rtk.ts");
 
 // Embedded slim RTK awareness instructions
 const RTK_SLIM: &str = include_str!("../../hooks/claude/rtk-awareness.md");
@@ -603,6 +605,7 @@ pub fn uninstall(
     gemini: bool,
     codex: bool,
     cursor: bool,
+    omp: bool,
     ctx: InitContext,
 ) -> Result<()> {
     let InitContext { verbose, dry_run } = ctx;
@@ -612,6 +615,10 @@ pub fn uninstall(
             print_dry_run_footer();
         }
         return Ok(());
+    }
+
+    if omp {
+        return uninstall_omp(global, ctx);
     }
 
     if cursor {
@@ -818,6 +825,65 @@ pub fn uninstall(
         print_dry_run_footer();
     }
 
+    Ok(())
+}
+
+fn uninstall_omp(global: bool, ctx: InitContext) -> Result<()> {
+    let base_dir = if global {
+        dirs::home_dir().context("Cannot determine home directory. Is $HOME set?")?
+    } else {
+        std::env::current_dir()?
+    };
+    uninstall_omp_at(&base_dir, global, ctx)
+}
+
+fn uninstall_omp_at(base_dir: &Path, global: bool, ctx: InitContext) -> Result<()> {
+    let InitContext { verbose, dry_run } = ctx;
+    let extension_path = omp_extension_path(base_dir, global);
+
+    let content = match fs::read_to_string(&extension_path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            println!("RTK was not installed for Oh My Pi (nothing to remove)");
+            return Ok(());
+        }
+        Err(e) => {
+            return Err(e).with_context(|| {
+                format!("Failed to read OMP extension: {}", extension_path.display())
+            });
+        }
+    };
+
+    if omp_extension_matches_stock(&content) {
+        if dry_run {
+            println!(
+                "[dry-run] Would remove OMP extension: {}",
+                extension_path.display()
+            );
+        } else {
+            fs::remove_file(&extension_path).with_context(|| {
+                format!(
+                    "Failed to remove OMP extension: {}",
+                    extension_path.display()
+                )
+            })?;
+            if verbose > 0 {
+                eprintln!("Removed OMP extension: {}", extension_path.display());
+            }
+        }
+        println!("RTK uninstalled for Oh My Pi:");
+        println!("  - Extension: {}", extension_path.display());
+        return Ok(());
+    }
+
+    if omp_extension_contains_rtk(&content) {
+        anyhow::bail!(
+            "OMP extension at {} contains RTK content that does not match the stock extension. Remove the file manually.",
+            extension_path.display()
+        );
+    }
+
+    println!("RTK was not installed for Oh My Pi (nothing to remove)");
     Ok(())
 }
 
@@ -1782,6 +1848,108 @@ fn run_antigravity_mode_at(base_dir: &Path, ctx: InitContext) -> Result<()> {
     Ok(())
 }
 
+// ─── Oh My Pi (OMP) support ────────────────────────────────
+
+const OMP_EXTENSION_MARKER: &str = "// RTK - Rust Token Killer";
+
+fn omp_extension_contains_rtk(existing: &str) -> bool {
+    existing.contains(OMP_EXTENSION_MARKER)
+}
+
+fn omp_extension_matches_stock(existing: &str) -> bool {
+    existing.trim() == OMP_EXTENSION.trim()
+}
+
+fn omp_extension_path(base_dir: &Path, global: bool) -> PathBuf {
+    if global {
+        base_dir.join(OMP_GLOBAL_EXTENSION_PATH)
+    } else {
+        base_dir.join(OMP_PROJECT_EXTENSION_PATH)
+    }
+}
+
+fn install_omp_extension_file(extension_path: &Path, ctx: InitContext) -> Result<bool> {
+    let existing = match fs::read_to_string(extension_path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            return Err(e).with_context(|| {
+                format!("Failed to read OMP extension: {}", extension_path.display())
+            });
+        }
+    };
+
+    if omp_extension_matches_stock(&existing) {
+        return Ok(false);
+    }
+    if omp_extension_contains_rtk(&existing) {
+        anyhow::bail!(
+            "OMP extension at {} contains RTK content that does not match the stock extension. Update or remove the file manually, then re-run the command.",
+            extension_path.display()
+        );
+    }
+    if !existing.trim().is_empty() {
+        anyhow::bail!(
+            "OMP extension file at {} already exists. Move, merge, or delete it manually, then re-run the command.",
+            extension_path.display()
+        );
+    }
+
+    if let Some(parent) = extension_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        if ctx.dry_run {
+            println!("[dry-run] Would create directory: {}", parent.display());
+        } else {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
+        }
+    }
+
+    write_if_changed(extension_path, OMP_EXTENSION, "OMP extension", ctx)
+}
+
+fn run_omp_mode_at(base_dir: &Path, global: bool, ctx: InitContext) -> Result<()> {
+    let extension_path = omp_extension_path(base_dir, global);
+    let changed = install_omp_extension_file(&extension_path, ctx)?;
+
+    let (scope, scope_target) = if global {
+        ("(global)", "every project")
+    } else {
+        ("in this project", "this project")
+    };
+
+    if changed && ctx.dry_run {
+        println!("\n[dry-run] Would configure RTK for Oh My Pi {scope}.\n");
+        println!(
+            "  Extension: {} (would be created)",
+            extension_path.display()
+        );
+    } else {
+        let (header, ext_note) = if changed {
+            ("configured", "installed")
+        } else {
+            ("already configured", "already present")
+        };
+        println!("\nRTK {header} for Oh My Pi {scope}.\n");
+        println!("  Extension: {} ({ext_note})", extension_path.display());
+        println!("  OMP will now rewrite supported bash tool calls through RTK in {scope_target}.");
+    }
+    println!("  Restart OMP. Test with: git status\n");
+
+    Ok(())
+}
+
+pub fn run_omp_mode(global: bool, ctx: InitContext) -> Result<()> {
+    if global {
+        let home = dirs::home_dir().context("Cannot determine home directory. Is $HOME set?")?;
+        run_omp_mode_at(&home, global, ctx)
+    } else {
+        run_omp_mode_at(&std::env::current_dir()?, global, ctx)
+    }
+}
+
 fn run_codex_mode(global: bool, ctx: InitContext) -> Result<()> {
     let (agents_md_path, rtk_md_path) = if global {
         let codex_dir = resolve_codex_dir()?;
@@ -2569,12 +2737,58 @@ fn remove_cursor_hook_from_json(root: &mut serde_json::Value) -> bool {
 }
 
 /// Show current rtk configuration
-pub fn show_config(codex: bool) -> Result<()> {
+pub fn show_config(codex: bool, omp: bool) -> Result<()> {
     if codex {
         return show_codex_config();
     }
-
+    if omp {
+        return show_omp_config();
+    }
     show_claude_config()
+}
+
+fn print_omp_extension_status(label: &str, extension_path: &Path) -> Result<()> {
+    if extension_path.exists() {
+        let content = fs::read_to_string(extension_path)?;
+        if omp_extension_matches_stock(&content) {
+            println!("[ok] {}: {}", label, extension_path.display());
+        } else if omp_extension_contains_rtk(&content) {
+            println!(
+                "[warn] {}: {} contains RTK content but differs from the stock OMP extension",
+                label,
+                extension_path.display()
+            );
+        } else {
+            println!(
+                "[--] {}: {} exists but rtk is not configured",
+                label,
+                extension_path.display()
+            );
+        }
+    } else {
+        println!("[--] {}: {} (not found)", label, extension_path.display());
+    }
+
+    Ok(())
+}
+
+fn show_omp_config() -> Result<()> {
+    let home = dirs::home_dir().context("Cannot determine home directory. Is $HOME set?")?;
+    let cwd = std::env::current_dir()?;
+    let global_extension = omp_extension_path(&home, true);
+    let project_extension = omp_extension_path(&cwd, false);
+
+    println!("rtk Configuration (Oh My Pi):\n");
+    print_omp_extension_status("Global extension", &global_extension)?;
+    print_omp_extension_status("Project extension", &project_extension)?;
+
+    println!("\nUsage:");
+    println!("  rtk init --agent omp                 # Configure ./.omp/extensions/rtk.ts");
+    println!("  rtk init -g --agent omp              # Configure ~/.omp/agent/extensions/rtk.ts");
+    println!("  rtk init --agent omp --uninstall     # Remove project OMP RTK extension");
+    println!("  rtk init -g --agent omp --uninstall  # Remove global OMP RTK extension");
+
+    Ok(())
 }
 
 fn show_claude_config() -> Result<()> {
@@ -4367,7 +4581,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         with_claude_dir_override(&tmp, |claude_dir| {
             run_default_mode(true, PatchMode::Auto, false, InitContext::default()).unwrap();
-            uninstall(true, false, false, false, InitContext::default()).unwrap();
+            uninstall(true, false, false, false, false, InitContext::default()).unwrap();
 
             assert!(!claude_dir.join(RTK_MD).exists(), "RTK.md must be removed");
             let settings_content =
@@ -4494,7 +4708,7 @@ mod tests {
                 dry_run: true,
                 ..Default::default()
             };
-            uninstall(true, false, false, false, dry).unwrap();
+            uninstall(true, false, false, false, false, dry).unwrap();
 
             // Files must still exist with identical content
             assert!(
@@ -4606,5 +4820,179 @@ mod tests {
             !cleaned.contains(RTK_BLOCK_END),
             "RTK end marker must be removed"
         );
+    }
+
+    // ─── OMP extension tests ─────────────────────────────────────
+
+    #[test]
+    fn test_omp_extension_install_and_idempotent() {
+        let temp = TempDir::new().unwrap();
+        let extension_path = omp_extension_path(temp.path(), false);
+        let ctx = InitContext {
+            verbose: 0,
+            dry_run: false,
+        };
+
+        let changed = install_omp_extension_file(&extension_path, ctx).unwrap();
+        assert!(changed);
+        let content = fs::read_to_string(&extension_path).unwrap();
+        assert_eq!(content, OMP_EXTENSION);
+
+        let changed_again = install_omp_extension_file(&extension_path, ctx).unwrap();
+        assert!(!changed_again);
+        let content_again = fs::read_to_string(&extension_path).unwrap();
+        assert_eq!(content_again, OMP_EXTENSION);
+    }
+
+    #[test]
+    fn test_omp_extension_rejects_stale_rtk_content() {
+        let temp = TempDir::new().unwrap();
+        let extension_path = omp_extension_path(temp.path(), false);
+        fs::create_dir_all(extension_path.parent().unwrap()).unwrap();
+        fs::write(&extension_path, "// RTK - Rust Token Killer\n// stale").unwrap();
+        let ctx = InitContext {
+            verbose: 0,
+            dry_run: false,
+        };
+
+        let err = install_omp_extension_file(&extension_path, ctx).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("does not match the stock extension"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_omp_extension_rejects_unmanaged_file() {
+        let temp = TempDir::new().unwrap();
+        let extension_path = omp_extension_path(temp.path(), false);
+        fs::create_dir_all(extension_path.parent().unwrap()).unwrap();
+        fs::write(
+            &extension_path,
+            "export default function userExtension() {}\n",
+        )
+        .unwrap();
+        let ctx = InitContext {
+            verbose: 0,
+            dry_run: false,
+        };
+
+        let err = install_omp_extension_file(&extension_path, ctx).unwrap_err();
+        assert!(
+            err.to_string().contains("already exists"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_omp_mode_creates_global_extension() {
+        let temp = TempDir::new().unwrap();
+        let ctx = InitContext {
+            verbose: 0,
+            dry_run: false,
+        };
+        run_omp_mode_at(temp.path(), true, ctx).unwrap();
+
+        let extension_path = temp.path().join(".omp/agent/extensions/rtk.ts");
+        assert!(extension_path.exists(), "OMP extension should be created");
+        let content = fs::read_to_string(&extension_path).unwrap();
+        assert_eq!(content, OMP_EXTENSION);
+    }
+
+    #[test]
+    fn test_omp_mode_creates_project_extension() {
+        let temp = TempDir::new().unwrap();
+        let ctx = InitContext {
+            verbose: 0,
+            dry_run: false,
+        };
+        run_omp_mode_at(temp.path(), false, ctx).unwrap();
+
+        let extension_path = temp.path().join(".omp/extensions/rtk.ts");
+        assert!(extension_path.exists(), "OMP extension should be created");
+        let content = fs::read_to_string(&extension_path).unwrap();
+        assert_eq!(content, OMP_EXTENSION);
+    }
+
+    #[test]
+    fn test_omp_marker_is_first_line_of_embedded() {
+        assert!(
+            OMP_EXTENSION.starts_with(OMP_EXTENSION_MARKER),
+            "OMP_EXTENSION_MARKER must match the first line of hooks/omp/rtk.ts; update one so they agree"
+        );
+    }
+
+    #[test]
+    fn test_omp_uninstall_removes_stock_extension() {
+        let temp = TempDir::new().unwrap();
+        let extension_path = omp_extension_path(temp.path(), false);
+        fs::create_dir_all(extension_path.parent().unwrap()).unwrap();
+        fs::write(&extension_path, OMP_EXTENSION).unwrap();
+
+        uninstall_omp_at(temp.path(), false, InitContext::default()).unwrap();
+        assert!(
+            !extension_path.exists(),
+            "Stock OMP extension must be removed"
+        );
+    }
+
+    #[test]
+    fn test_omp_uninstall_dry_run_keeps_stock_extension() {
+        let temp = TempDir::new().unwrap();
+        let extension_path = omp_extension_path(temp.path(), false);
+        fs::create_dir_all(extension_path.parent().unwrap()).unwrap();
+        fs::write(&extension_path, OMP_EXTENSION).unwrap();
+
+        let dry = InitContext {
+            dry_run: true,
+            ..Default::default()
+        };
+        uninstall_omp_at(temp.path(), false, dry).unwrap();
+        assert!(
+            extension_path.exists(),
+            "Dry-run uninstall must not remove the file"
+        );
+    }
+
+    #[test]
+    fn test_omp_uninstall_preserves_unmanaged_file() {
+        let temp = TempDir::new().unwrap();
+        let extension_path = omp_extension_path(temp.path(), false);
+        fs::create_dir_all(extension_path.parent().unwrap()).unwrap();
+        let foreign = "export default function userExtension() {}\n";
+        fs::write(&extension_path, foreign).unwrap();
+
+        uninstall_omp_at(temp.path(), false, InitContext::default()).unwrap();
+        assert_eq!(
+            fs::read_to_string(&extension_path).unwrap(),
+            foreign,
+            "Unmanaged file must be left untouched"
+        );
+    }
+
+    #[test]
+    fn test_omp_uninstall_rejects_stale_rtk_content() {
+        let temp = TempDir::new().unwrap();
+        let extension_path = omp_extension_path(temp.path(), false);
+        fs::create_dir_all(extension_path.parent().unwrap()).unwrap();
+        fs::write(&extension_path, format!("{OMP_EXTENSION_MARKER}\n// stale")).unwrap();
+
+        let err = uninstall_omp_at(temp.path(), false, InitContext::default()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("does not match the stock extension"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            extension_path.exists(),
+            "Stale RTK file must be preserved for manual review"
+        );
+    }
+
+    #[test]
+    fn test_omp_uninstall_when_not_installed_is_noop() {
+        let temp = TempDir::new().unwrap();
+        uninstall_omp_at(temp.path(), false, InitContext::default()).unwrap();
     }
 }
