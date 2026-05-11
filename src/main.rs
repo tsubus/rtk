@@ -3055,5 +3055,4 @@ mod tests {
             _ => panic!("Expected Commands::Npx for unknown tool"),
         }
     }
-
 }

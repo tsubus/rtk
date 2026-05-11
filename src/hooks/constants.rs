@@ -22,5 +22,5 @@ pub const CURSOR_DIR: &str = ".cursor";
 pub const CODEX_DIR: &str = ".codex";
 pub const GEMINI_DIR: &str = ".gemini";
 
-pub const OMP_GLOBAL_EXTENSION_PATH: &str = ".omp/agent/extensions/rtk.ts";
-pub const OMP_PROJECT_EXTENSION_PATH: &str = ".omp/extensions/rtk.ts";
+pub const OMP_GLOBAL_HOOK_PATH: &str = ".omp/agent/hooks/pre/rtk.ts";
+pub const OMP_PROJECT_HOOK_PATH: &str = ".omp/hooks/pre/rtk.ts";
